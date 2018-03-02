@@ -13,6 +13,7 @@ class RAM {
     write(MAR, MDR) {
         // !!! IMPLEMENT ME
         // write the value in the MDR to the address MAR
+        return this.access(MAR, MDR, 'write');
     }
 
     /**
@@ -23,6 +24,17 @@ class RAM {
     read(MAR) {
         // !!! IMPLEMENT ME
         // Read the value in address MAR and return it
+        return this.access(MAR, null, 'read');
+    }
+
+    access(MAR, MDR, f) {
+        if (f === 'write') {
+            this.mem[MAR] = MDR;
+        }
+        if (f === 'read') {
+            MDR = this.mem[MAR];
+        }
+        return MDR;
     }
 }
 

@@ -20,14 +20,27 @@ function processFile(content, cpu, onComplete) {
         // !!! IMPLEMENT ME
 
         // Strip comments
-
         // Remove whitespace from either end of the line
+        const comment = line.indexOf('#');
+        if (comment != -1) {
+            line = line.substr(0, comment);
+        }
+        line = line.trim();
 
         // Ignore empty lines
+        if (line === '') {
+            continue;
+        }
 
         // Convert from binary string to numeric value
+        const binary = parseInt(line, 2);
+        if (isNaN(binary)) {
+            console.error('Invalid binary: ' + line);
+            process.exit(1);
+        }
 
         // Store in the CPU with the .poke() function
+        cpu.poke(curAddr, binary);        
 
         // And on to the next one
         curAddr++;

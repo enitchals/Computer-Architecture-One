@@ -6,141 +6,227 @@ const fs = require('fs');
 
 // Instructions
 
+const ADD  = 0b10101000; // ADD R R
+const CMP  = 0b10100000; // CMP R R
+const DEC  = 0b01111001; // DEC R
+const DIV  = 0b10101011; // DIV R R
 const HLT  = 0b00000001; // Halt CPU
-// !!! IMPLEMENT ME
-// LDI
-// MUL
-// PRN
+const INC  = 0b01111000; // INC R
+const JEQ  = 0b01010001; // JEQ R
+const JMP  = 0b01010000; // JMP R
+const JNE  = 0b01010010; // JNE R
+const LDI  = 0b10011001; // LDI R,I(mmediate)
+const MUL  = 0b10101010; // MUL R,R
+const POP  = 0b01001100; // Pop R
+const PRN  = 0b01000011; // Print numeric register
+const PUSH = 0b01001101; // Push R
+const SUB  = 0b10101001; // SUB R R
 
-/**
- * Class for simulating a simple Computer (CPU & memory)
- */
+const SP = 0x07;
+
+const equalFlag = 0;
+const greaterFlag = 1;
+const lessFlag = 2;
+
+
 class CPU {
-
-    /**
-     * Initialize the CPU
-     */
     constructor(ram) {
         this.ram = ram;
 
         this.reg = new Array(8).fill(0); // General-purpose registers
+
+        this.reg[SP] = 0xf3; // Stack empty
         
         // Special-purpose registers
         this.reg.PC = 0; // Program Counter
         this.reg.IR = 0; // Instruction Register
+        this.reg.FL = 0; // Flags (8-bit register)
 
 		this.setupBranchTable();
     }
-	
-	/**
-	 * Sets up the branch table
-	 */
+    
+    checkFlag(flag) {
+        return (this.reg.FL & (1 << flag)) >> flag;
+    }
+
 	setupBranchTable() {
-		let bt = {};
+        let bt = {};
+        
+        bt[ADD]  = this.ADD;
+        bt[CMP]  = this.CMP;
+        bt[DEC]  = this.DEC;
+        bt[DIV]  = this.DIV;
+        bt[HLT]  = this.HLT;
+        bt[INC]  = this.INC;
+        bt[JEQ]  = this.JEQ;
+        bt[JMP]  = this.JMP;
+        bt[JNE]  = this.JNE;
+        bt[LDI]  = this.LDI;
+        bt[MUL]  = this.MUL;
+        bt[POP]  = this.POP;
+        bt[PRN]  = this.PRN;
+        bt[PUSH] = this.PUSH;
+        bt[SUB]  = this.SUB;
 
-        bt[HLT] = this.HLT;
-        // !!! IMPLEMENT ME
-        // LDI
-        // MUL
-        // PRN
-
+        for (let k of Object.keys(bt)) {
+            bt[k] = bt[k].bind(this);
+        }
 		this.branchTable = bt;
 	}
 
-    /**
-     * Store value in memory address, useful for program loading
-     */
     poke(address, value) {
         this.ram.write(address, value);
     }
 
-    /**
-     * Starts the clock ticking on the CPU
-     */
     startClock() {
         const _this = this;
-
         this.clock = setInterval(() => {
             _this.tick();
         }, 1);
     }
 
-    /**
-     * Stops the clock
-     */
     stopClock() {
         clearInterval(this.clock);
     }
 
-    /**
-     * ALU functionality
-     * 
-     * op can be: ADD SUB MUL DIV INC DEC CMP
-     */
-    alu(op, regA, regB) {
+    alu(op, regA, regB, immediate) {
+        let valA, valB;
+        valA = this.reg[regA];
+        if (immediate === undefined) {
+            if (regB !== undefined) {
+                valB = this.reg[regB];
+            }
+        } else {
+            valB = immediate;
+        }
+        
         switch (op) {
-            case 'MUL':
-                // !!! IMPLEMENT ME
+            case 'ADD':
+                this.reg[regA] = (valA + valB) & 255;
                 break;
+            case 'CMP':
+                if (valA === valB) {this.reg.FL |= (1 << equalFlag)} else {this.reg.FL &= ~(1 << equalFlag)}
+                if (valA > valB) {this.reg.FL |= (1 << greaterFlag)} else {this.reg.FL &= ~(1 << greaterFlag)}
+                if (valA < valB) {this.reg.FL |= (1 << lessFlag)} else {this.reg.FL &= ~(1 << lessFlag)}
+                break;
+            case 'DEC':
+                this.reg[regA] = (valA - 1) & 255;
+                break;
+            case 'DIV':
+                this.reg[regA] = (valA / valB) & 255;
+                break;
+            case 'INC':
+                this.reg[regA] = (valA + 1) & 255;
+                break;
+            case 'MUL':
+                this.reg[regA] = (valA * valB) & 255;
+                break;
+            case 'SUB':
+                this.reg[regA] = (valA - valB) & 255;
+                break;
+
+
         }
     }
 
-    /**
-     * Advances the CPU one cycle
-     */
     tick() {
-        // Load the instruction register (IR) from the current PC
-        // !!! IMPLEMENT ME
+        this.reg.IR = this.ram.read(this.reg.PC);
+        const handler = this.branchTable[this.reg.IR];
+        
+        if (handler === undefined) {
+            console.log(`ERROR: invalid instruction ${this.reg.IR.toString(2)}`);
+            this.stopClock();
+            return;
+        }
 
-        // Debugging output
-        //console.log(`${this.reg.PC}: ${this.reg.IR.toString(2)}`);
+        const operandA = this.ram.read((this.reg.PC+1) & 0xff);
+        const operandB = this.ram.read((this.reg.PC+2) & 0xff);
+        const newPC = handler(operandA, operandB);
 
-        // Based on the value in the Instruction Register, locate the
-        // appropriate hander in the branchTable
-        // !!! IMPLEMENT ME
-        // let handler = ...
+        if (newPC === undefined) {
+            const operandCount = (this.reg.IR >> 6) & 0b11;
+            const instSize = operandCount + 1;
+            this.alu('ADD', 'PC', null, instSize);
+        } else {
+            this.reg.PC = newPC;
+        }
+    }
+        
 
-        // Check that the handler is defined, halt if not (invalid
-        // instruction)
-        // !!! IMPLEMENT ME
 
-        // We need to use call() so we can set the "this" value inside
-        // the handler (otherwise it will be undefined in the handler)
-        handler.call(this, operandA, operandB);
-
-        // Increment the PC register to go to the next instruction
-        // !!! IMPLEMENT ME
+    ADD(regA, regB) {
+        this.alu('ADD', regA, regB);
     }
 
-    // INSTRUCTION HANDLER CODE:
+    CMP(regA, regB) {
+        this.alu('CMP', regA, regB);
+    }
 
-    /**
-     * HLT
-     */
+    DEC(reg) {
+        this.alu('DEC', reg);
+    }
+
+    DIV(regA, regB) {
+        this.alu('DIV', regA, regB);
+    }
+
     HLT() {
         this.stopClock();
     }
 
-    /**
-     * LDI R,I
-     */
-    LDI(reg, value) {
-        // !!! IMPLEMENT ME
+    INC(reg) {
+        this.alu('INC', reg);
     }
 
-    /**
-     * MUL R,R
-     */
+    JEQ(reg) {
+        if (this.checkFlag(equalFlag)) {
+            return this.reg[reg];
+        }
+    }
+
+    JMP(reg) {
+        return this.reg[reg];
+    }
+
+    JNE(reg) {
+        if (!this.checkFlag(equalFlag)) {
+            return this.reg[reg];
+        }
+    }
+
+    LDI(reg, val) {
+        this.reg[reg] = val;
+    }
+
     MUL(regA, regB) {
-        // !!! IMPLEMENT ME
-        // Call the ALU
+        this.alu('MUL', regA, regB);
     }
 
-    /**
-     * PRN R
-     */
+    _pop() {
+        const val = this.ram.read(this.reg[SP]);
+        this.alu('INC', SP);
+        return val;
+    }
+
+    POP(reg) {
+        this.reg[reg] = this._pop();
+    }
+
+    _push(reg) {
+        this.alu('DEC', SP);
+        this.ram.write(this.reg[SP], val);
+    }
+
+    PUSH(reg) {
+        this._push(this.reg[reg]);
+    }
+
     PRN(regA) {
-        // !!! IMPLEMENT ME
+        fs.writeSync(process.stdout.fd, this.reg[regA]);
+    }
+
+    SUB(regA, regB) {
+        this.alu('SUB', regA, regB);
     }
 }
 
